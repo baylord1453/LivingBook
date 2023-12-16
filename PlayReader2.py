@@ -27,161 +27,158 @@ def read_script(file_path):
 
 file_path = "rj.txt"  # Replace with the actual path to your script
 script_content = read_script(file_path)
+
 if script_content:
     print("Script read successfully.")
 
 def parse_script_with_flexible_characters(text):
     """
-    Parses a script and organizes the dialogue by characters.
+    Parses a script and organizes the dialogue by characters, grouping a character's continuous dialogue as a single entry.
 
     Parameters:
     text (str): The content of the script.
 
     Returns:
-    dict: A dictionary with character names as keys and a list of their lines as values.
+    dict: A dictionary with character names as keys and a list of their dialogue blocks as values.
     """
     characters = {}
-
     current_character = None
+    dialogue_block = ""
+
     for line in text.split('\n'):
         line = line.strip()
         # Check if the line is in uppercase (indicating a character's name)
         if line.isupper():
+            # Save the previous character's dialogue block if it exists
+            if current_character and dialogue_block:
+                if current_character not in characters:
+                    characters[current_character] = []
+                characters[current_character].append(dialogue_block)
+                dialogue_block = ""
+
             current_character = line
-            # Add the character to the dictionary if not already present
-            if current_character not in characters:
-                characters[current_character] = []
         elif current_character:
-            # Add the line to the current character's dialogue, excluding empty lines
+            # Accumulate the dialogue block for the current character
             if line:
-                characters[current_character].append(line)
+                dialogue_block += line + " "  # Add a space to separate lines
+
+    # Add the last character's dialogue block if it exists
+    if current_character and dialogue_block:
+        if current_character not in characters:
+            characters[current_character] = []
+        characters[current_character].append(dialogue_block)
 
     return characters
 
+
 parsed_characters = parse_script_with_flexible_characters(script_content)
 
-def create_training_data(parsed_characters):
+def find_preceding_dialogue(script, target_character, target_dialogue):
+    """
+    Finds the continuous dialogue of the character who spoke immediately before the target dialogue block.
+
+    Parameters:
+    script (dict): Parsed script with characters and their dialogues.
+    target_character (str): The character whose dialogue block is targeted.
+    target_dialogue (str): The specific dialogue block to find the preceding dialogue for.
+
+    Returns:
+    str: The preceding character's continuous dialogue block, or an empty string if not found.
+    """
+    previous_character = None
+    previous_dialogue = ""
+
+    for character, dialogues in script.items():
+        for dialogue in dialogues:
+            if character == target_character and dialogue == target_dialogue:
+                return previous_dialogue
+            previous_character = character
+            previous_dialogue = dialogue
+
+    return ""  # No preceding dialogue found
+
+def find_following_dialogue(script, target_character, target_dialogue):
+    """
+    Finds the continuous dialogue of the character who speaks immediately after the target dialogue block.
+
+    Parameters:
+    script (dict): Parsed script with characters and their dialogues.
+    target_character (str): The character whose dialogue block is targeted.
+    target_dialogue (str): The specific dialogue block to find the following dialogue for.
+
+    Returns:
+    str: The following character's continuous dialogue block, or an empty string if not found.
+    """
+    found_target = False
+
+    for character, dialogues in script.items():
+        for dialogue in dialogues:
+            if found_target and character != target_character:
+                return dialogue  # Return the next dialogue spoken by a different character
+
+            if character == target_character and dialogue == target_dialogue:
+                found_target = True
+
+    return ""  # No following dialogue found
+
+import json
+
+def create_training_data(parsed_characters, script_content):
     """
     Creates training data in JSONL format for each character.
 
     Parameters:
     parsed_characters (dict): Dictionary with characters and their dialogues.
+    script_content (str): The full script content for context look-up.
     """
     for character, lines in parsed_characters.items():
-        # Prepare data for JSONL
         data = []
-        for i in range(1, len(lines)):
-            conversation_pair = {
-                "input": lines[i - 1],
-                "response": lines[i]
+        for i, line in enumerate(lines):
+            # Find preceding dialogue (user role)
+            preceding_dialogue = find_preceding_dialogue(parsed_characters, character, line)
+
+            # Find following dialogue (user role)
+            following_dialogue = find_following_dialogue(parsed_characters, character, line)
+
+            # Determine if the next dialogue is also by the same character (assistant role)
+            next_assistant_line = ""
+            if i + 1 < len(lines):
+                next_assistant_line = lines[i + 1]
+
+            # Structure the conversation snippet
+            conversation = {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": preceding_dialogue
+                    },
+                    {
+                        "role": "assistant",
+                        "content": line
+                    },
+                    {
+                        "role": "user",
+                        "content": following_dialogue
+                    }
+                ]
             }
-            data.append(conversation_pair)
+
+            # Add the next assistant line if applicable
+            if next_assistant_line:
+                conversation["messages"].append({
+                    "role": "assistant",
+                    "content": next_assistant_line
+                })
+
+            data.append(conversation)
 
         # Write to JSONL file
         jsonl_filename = f"{character}.jsonl"
         with open(jsonl_filename, 'w', encoding='utf-8') as file:
             for item in data:
-                json.dump(item, file)
+                json.dump(item, file, ensure_ascii=False)
                 file.write('\n')
 
         print(f"Data for {character} written to {jsonl_filename}")
 
-create_training_data(parsed_characters)
-
-# # Example usage
-# # Replace 'rj.jsonl' with the path to your .jsonl file
-
-# def parse_play(text):
-#     # Dictionary with character names as keys and empty lists for their lines
-#     characters = {
-#         "ROMEO": [],
-#         "MONTAGUE": [],
-#         "LADY MONTAGUE": [],
-#         "ABRAM": [],
-#         "BALTHASAR": [],
-#         "JULIET": [],
-#         "CAPULET": [],
-#         "LADY CAPULET": [],
-#         "TYBALT": [],
-#         "PETRUCHIO": [],
-#         "SAMPSON": [],
-#         "GREGORY": [],
-#         "PETER": [],
-#         "ESCALUS": [],
-#         "PARIS": [],
-#         "MERCUTIO": [],
-#         "FRIAR LAWRENCE": [],
-#         "FRIAR JOHN": [],
-#         "APOTHECARY": []
-#     }
-
-#     current_character = None
-#     for line in text.split('\n'):
-#         line = line.strip()
-#         if line in characters:
-#             current_character = line
-#         elif current_character:
-#             characters[current_character].append(line)
-
-#     return characters
-
-# # Example usage
-# # Assuming 'play_text' is a string containing the entire text of the play
-# # parsed_characters = parse_play(play_text)
-
-# # Example usage
-# pdf_path = 'rj.pdf'
-# extracted_text = extract_text_from_pdf(pdf_path)
-# print(extracted_text)
-
-# import json
-# from transformers import GPT2Tokenizer
-# import nltk
-# nltk.download('punkt')
-# from nltk.tokenize import sent_tokenize
-
-# def clean_text(text):
-#     # Replace Unicode characters with ASCII equivalents or remove them
-#     replacements = {
-#         '\u2014': '-',  # Replace em dash with hyphen
-#         '\u201c': '"',  # Replace left double quotation mark with standard quotation
-#         '\u201d': '"',  # Replace right double quotation mark with standard quotation
-#         # Add more replacements as needed
-#     }
-#     for unicode_char, ascii_char in replacements.items():
-#         text = text.replace(unicode_char, ascii_char)
-#     return text
-
-# # Example usage
-# text=extracted_text
-# grouped_sentences = segment_text(text)
-# write_segments_to_jsonl(grouped_sentences, 'RJ.jsonl')
-
-# import re
-# import json
-
-# def read_script(file_path):
-# # Code to read the script file
-# pass
-
-# def parse_script(content):
-# # Code to parse the script and extract characters and dialogues
-# pass
-
-# def script_to_json(parsed_data):
-# # Convert the parsed data to JSON format
-# return json.dumps(parsed_data, indent=4)
-
-# # Main function to tie everything together
-# def main():
-# file_path = "path_to_script.txt"  # Replace with your script path
-# script_content = read_script(file_path)
-# parsed_data = parse_script(script_content)
-# script_json = script_to_json(parsed_data)
-
-# # Save the JSON to a file
-# with open("script_output.json", "w") as file:
-#     file.write(script_json)
-
-# if __name__ == "__main__":
-# main()
+create_training_data(parsed_characters, script_content)
